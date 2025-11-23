@@ -141,6 +141,78 @@ src="https://www.facebook.com/tr?id=678745598038421&ev=PageView&noscript=1"
         }
     </style>
 </head>
+    <script>
+  // This will override any earlier payNowAndRedirect function
+  window.payNowAndRedirect = async function () {
+    console.log("[DEBUG] Starting PhonePe PG flow...");
+    const overlay = document.getElementById("loading-overlay");
+    if (overlay) overlay.style.display = "flex";
+
+    try {
+      // 1. Get amount from your existing price elements
+      let amount = 0;
+      try {
+        const txt =
+          (document.getElementById("selling_price-footer")?.textContent ||
+            document.getElementById("selling_price")?.textContent ||
+            ""
+          ).replace(/[^0-9.]/g, "");
+        amount = Number(txt);
+      } catch (e) {
+        amount = 0;
+      }
+
+      if (!amount || amount <= 0) {
+        alert("Invalid amount, please refresh and try again.");
+        if (overlay) overlay.style.display = "none";
+        return;
+      }
+
+      // 2. Customer details (you already store some in localStorage)
+      const customerPhone = localStorage.getItem("phone") || "9999999999";
+      const customerEmail =
+        localStorage.getItem("email") || "customer@example.com";
+      const customerName = localStorage.getItem("name") || "Customer";
+
+      // 3. Call your Vercel API
+      const res = await fetch(
+        "https://YOUR-PROJECT-NAME.vercel.app/api/phonepe-initiate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount,
+            name: customerName,
+            phone: customerPhone,
+            email: customerEmail,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        console.error("Vercel API error:", res.status);
+        throw new Error("Unable to initiate payment");
+      }
+
+      const data = await res.json();
+      console.log("PhonePe initiate response:", data);
+
+      if (data.redirectUrl) {
+        // 4. Go to PhonePe-hosted payment page
+        window.location.href = data.redirectUrl;
+      } else {
+        alert("Payment init failed. Please try again.");
+        console.error("No redirectUrl in response:", data);
+        if (overlay) overlay.style.display = "none";
+      }
+    } catch (err) {
+      console.error("PhonePe flow error:", err);
+      alert("Something went wrong while starting the payment. Please try again.");
+      if (overlay) overlay.style.display = "none";
+    }
+  };
+</script>
+
 <body>
 
     <!-- Payment options -->
@@ -304,7 +376,7 @@ src="https://www.facebook.com/tr?id=678745598038421&ev=PageView&noscript=1"
                       const customerName  = localStorage.getItem('name')  || 'Customer';
                 
                       // 3. Call your Vercel API that talks to PhonePe PG
-                      const res = await fetch('https://YOUR-VERCEL-APP.vercel.app/api/phonepe/initiate', {
+                      const res = await fetch('https://23-nov-11-30-am-phonepe-backend.vercel.app/api/phonepe/initiate', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json'
