@@ -1,12 +1,10 @@
 // api/phonepe-initiate.js
-// Vercel serverless function to start PhonePe payment (sandbox)
 const crypto = require("crypto");
 
-const WHITELISTED_FRONTEND = "https://joyrentals.store"; 
-// e.g. "https://joyrentals.store"
+const WHITELISTED_FRONTEND = "https://joyrentals.store";
 
 module.exports = async (req, res) => {
-  // --- CORS handling so static site can call this ---
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", WHITELISTED_FRONTEND);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -14,9 +12,7 @@ module.exports = async (req, res) => {
     res.statusCode = 200;
     return res.end();
   }
-  // -------------------------------------------------
 
-  // Only POST allowed
   if (req.method !== "POST") {
     res.statusCode = 405;
     return res.json({ error: "Only POST allowed" });
@@ -39,20 +35,24 @@ module.exports = async (req, res) => {
       return res.json({ error: "Amount is required" });
     }
 
-    // 🔐 PhonePe config from Vercel env vars
     const merchantId = process.env.PHONEPE_MERCHANT_ID;
     const saltKey = process.env.PHONEPE_SALT_KEY;
     const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+    const env = (process.env.PHONEPE_ENV || "TEST").toUpperCase();
 
     if (!merchantId || !saltKey || !saltIndex) {
       res.statusCode = 500;
-      return res.json({
-        error: "PhonePe credentials not set in env vars",
-      });
+      return res.json({ error: "PhonePe credentials not set in env vars" });
     }
 
-    const baseUrl = "https://api-preprod.phonepe.com/apis/pg-sandbox";
+    // 👇 IMPORTANT: choose correct host based on environment
+    // TEST:  https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay
+    // LIVE:  https://api.phonepe.com/apis/hermes/pg/v1/pay
     const apiPath = "/pg/v1/pay";
+    const baseUrl =
+      env === "PROD"
+        ? "https://api.phonepe.com/apis/hermes"
+        : "https://api-preprod.phonepe.com/apis/pg-sandbox";
 
     const merchantTransactionId = "TXN_" + Date.now();
     const amountInPaise = Math.round(Number(amount) * 100);
@@ -62,19 +62,12 @@ module.exports = async (req, res) => {
       merchantTransactionId,
       merchantUserId: phone || "GUEST_USER",
       amount: amountInPaise,
-
-      // 👉 This must be YOUR STATIC WHITELISTED domain
       redirectUrl: `${WHITELISTED_FRONTEND}/phonepe-redirect.html`,
       redirectMode: "POST",
-
-      // 👉 This is your backend (can be non-whitelisted)
       callbackUrl:
         "https://23-nov-11-30-am-phonepe-backend.vercel.app/api/phonepe-callback",
-
       mobileNumber: phone,
-      paymentInstrument: {
-        type: "PAY_PAGE",
-      },
+      paymentInstrument: { type: "PAY_PAGE" },
     };
 
     const payloadStr = JSON.stringify(payload);
@@ -84,7 +77,6 @@ module.exports = async (req, res) => {
       .createHash("sha256")
       .update(base64Payload + apiPath + saltKey)
       .digest("hex");
-
     const xVerify = `${checksum}###${saltIndex}`;
 
     const phonepeRes = await fetch(baseUrl + apiPath, {
@@ -120,9 +112,6 @@ module.exports = async (req, res) => {
   } catch (err) {
     console.error("PhonePe initiate error:", err);
     res.statusCode = 500;
-    return res.json({
-      error: "Server error",
-      details: err.message,
-    });
+    return res.json({ error: "Server error", details: err.message });
   }
 };
