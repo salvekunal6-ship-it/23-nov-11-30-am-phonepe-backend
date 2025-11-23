@@ -2,7 +2,7 @@
 // Vercel serverless function to start PhonePe payment (sandbox)
 const crypto = require("crypto");
 
-const WHITELISTED_FRONTEND = "https://YOUR-WHITELISTED-DOMAIN"; 
+const WHITELISTED_FRONTEND = "https://joyrentals.store"; 
 // e.g. "https://joyrentals.store"
 
 module.exports = async (req, res) => {
