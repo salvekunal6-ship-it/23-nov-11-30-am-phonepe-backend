@@ -1,16 +1,28 @@
 // api/phonepe-initiate.js
-// Simple Vercel serverless function for PhonePe PG (sandbox)
+// Vercel serverless function to start PhonePe payment (sandbox)
 const crypto = require("crypto");
 
+const WHITELISTED_FRONTEND = "https://YOUR-WHITELISTED-DOMAIN"; 
+// e.g. "https://joyrentals.store"
+
 module.exports = async (req, res) => {
-  // Allow only POST
+  // --- CORS handling so static site can call this ---
+  res.setHeader("Access-Control-Allow-Origin", WHITELISTED_FRONTEND);
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    res.statusCode = 200;
+    return res.end();
+  }
+  // -------------------------------------------------
+
+  // Only POST allowed
   if (req.method !== "POST") {
     res.statusCode = 405;
     return res.json({ error: "Only POST allowed" });
   }
 
   try {
-    // Body parsing safety
     let body = req.body || {};
     if (typeof body === "string") {
       try {
@@ -27,11 +39,10 @@ module.exports = async (req, res) => {
       return res.json({ error: "Amount is required" });
     }
 
-    // 🔐 Get from Vercel env vars (we'll set these in Step 2)
+    // 🔐 PhonePe config from Vercel env vars
     const merchantId = process.env.PHONEPE_MERCHANT_ID;
     const saltKey = process.env.PHONEPE_SALT_KEY;
     const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-    const env = process.env.PHONEPE_ENV || "TEST";
 
     if (!merchantId || !saltKey || !saltIndex) {
       res.statusCode = 500;
@@ -40,31 +51,26 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Sandbox vs Prod base URL
-    const baseUrl =
-      env === "PROD"
-        ? "https://api.phonepe.com/apis/pg"
-        : "https://api-preprod.phonepe.com/apis/pg-sandbox";
+    const baseUrl = "https://api-preprod.phonepe.com/apis/pg-sandbox";
+    const apiPath = "/pg/v1/pay";
 
-    const apiPath = "/pg/v1/pay"; // used in checksum
-
-    // Unique transaction id
     const merchantTransactionId = "TXN_" + Date.now();
-
-    // Amount in paise
     const amountInPaise = Math.round(Number(amount) * 100);
 
-    // TODO: change these URLs to your real domains later
     const payload = {
       merchantId,
       merchantTransactionId,
       merchantUserId: phone || "GUEST_USER",
       amount: amountInPaise,
-      redirectUrl:
-        "https://YOUR-FRONTEND-DOMAIN/payment-success.html", // change later
+
+      // 👉 This must be YOUR STATIC WHITELISTED domain
+      redirectUrl: `${WHITELISTED_FRONTEND}/phonepe-redirect.html`,
       redirectMode: "POST",
+
+      // 👉 This is your backend (can be non-whitelisted)
       callbackUrl:
-        "https://YOUR-VERCEL-PROJECT.vercel.app/api/phonepe-callback", // optional for later
+        "https://23-nov-11-30-am-phonepe-backend.vercel.app/api/phonepe-callback",
+
       mobileNumber: phone,
       paymentInstrument: {
         type: "PAY_PAGE",
@@ -74,7 +80,6 @@ module.exports = async (req, res) => {
     const payloadStr = JSON.stringify(payload);
     const base64Payload = Buffer.from(payloadStr).toString("base64");
 
-    // checksum = SHA256(base64Payload + apiPath + saltKey) + ### + saltIndex
     const checksum = crypto
       .createHash("sha256")
       .update(base64Payload + apiPath + saltKey)
@@ -82,7 +87,6 @@ module.exports = async (req, res) => {
 
     const xVerify = `${checksum}###${saltIndex}`;
 
-    // Node 18 on Vercel has global fetch
     const phonepeRes = await fetch(baseUrl + apiPath, {
       method: "POST",
       headers: {
@@ -107,7 +111,6 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Frontend will redirect user to this URL
     res.statusCode = 200;
     return res.json({
       success: true,
